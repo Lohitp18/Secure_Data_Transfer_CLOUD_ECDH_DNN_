@@ -105,13 +105,12 @@ const uploadHandler = async (req, res) => {
       req.file.mimetype
     )
     
-    // If file is corrupted or highly suspicious, reject immediately
-    // Be EXTREMELY strict: reject if ANY issues found, corrupted, suspicious, or risk score > 0.2
-    const shouldReject = fileValidation.isCorrupted || 
-        fileValidation.isSuspicious || 
-        fileValidation.riskScore > 0.2 || 
-        !fileValidation.isValid ||
-        fileValidation.issues.length > 0
+    // If file is clearly corrupted or highly suspicious, reject.
+    // Relaxed thresholds so normal files can pass while obviously bad ones are blocked.
+    const shouldReject =
+      fileValidation.isCorrupted || // strong corruption signal from validators
+      fileValidation.riskScore > 0.7 || // high overall risk score
+      fileValidation.issues.length > 3 // multiple independent issues detected
     
     // Debug logging
     if (shouldReject) {
