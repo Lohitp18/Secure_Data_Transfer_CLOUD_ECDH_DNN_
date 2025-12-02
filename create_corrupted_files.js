@@ -47,3 +47,4 @@ console.log('✅ Created: repeated_pattern.bin (Repeated pattern - all 0xFF)')
 console.log('\n📁 All 5 corrupted/harmful test files created in test_files/ directory')
 console.log('   You can now upload these files to test detection')
 
+
