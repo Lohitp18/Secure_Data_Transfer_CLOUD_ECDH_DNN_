@@ -1,6 +1,7 @@
 import { getEntropyFeatures, detectEncryptionPatterns } from './entropy.js'
 import sharp from 'sharp'
-import pdfParse from 'pdf-parse'
+import * as pdfParse from 'pdf-parse';
+
 import AdmZip from 'adm-zip'
 
 /**
