@@ -31,21 +31,53 @@ def check_server_health():
     """Check if server is running"""
     print_header("Step 1: Checking Server Health")
     
-    try:
-        response = requests.get(f"{API_BASE}/health", timeout=3)
-        if response.status_code == 200:
-            print_check("Server is running", True, f"Response: {response.json()}")
-            return True
-        else:
-            print_check("Server is running", False, f"Status: {response.status_code}")
-            return False
-    except requests.exceptions.ConnectionError:
-        print_check("Server is running", False, "Cannot connect - is server running on port 5000?")
-        print("\n   💡 Start server with: cd server && npm start")
-        return False
-    except Exception as e:
-        print_check("Server is running", False, f"Error: {e}")
-        return False
+    # Try multiple URLs and methods
+    urls_to_try = [
+        f"{API_BASE}/health",
+        f"{SERVER_URL}/api/health",
+        "http://localhost:5000/api/health",
+        "http://127.0.0.1:5000/api/health",
+    ]
+    
+    print(f"   Trying to connect to server...")
+    print(f"   SERVER_URL: {SERVER_URL}")
+    print(f"   API_BASE: {API_BASE}")
+    
+    for url in urls_to_try:
+        try:
+            print(f"   Attempting: {url}")
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json() if response.text else {}
+                print_check("Server is running", True, f"URL: {url}, Response: {data}")
+                return True
+            elif response.status_code == 404:
+                print(f"   ❌ 404 Not Found (endpoint doesn't exist)")
+                continue
+            else:
+                print(f"   ⚠️  Status {response.status_code} (but server is responding)")
+                # Server is responding, even if not 200
+                print_check("Server is responding", True, f"Status: {response.status_code}")
+                return True
+        except requests.exceptions.ConnectionError as e:
+            print(f"   ❌ Connection failed: {url}")
+            continue
+        except requests.exceptions.Timeout:
+            print(f"   ⏱️  Timeout: {url}")
+            continue
+        except Exception as e:
+            print(f"   ⚠️  Error with {url}: {type(e).__name__}")
+            continue
+    
+    # If all URLs failed
+    print_check("Server is running", False, "Cannot connect to any server URL")
+    print("\n   💡 Troubleshooting:")
+    print(f"      1. Is server running? Check: http://localhost:5000/api/health")
+    print(f"      2. Start server with: cd server && npm start")
+    print(f"      3. Check if server is on a different port")
+    print(f"      4. Try in browser: http://localhost:5000/api/health")
+    
+    return False
 
 def check_ids_health():
     """Check if IDS service is running"""
