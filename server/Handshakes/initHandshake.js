@@ -1,4 +1,4 @@
-import { generateServerX25519KeyPair, uint8ArrayToB64 } from '../utils/crypto.js'
+import { generateServerX25519KeyPair, uint8ArrayToB64, b64ToUint8Array } from '../utils/crypto.js'
 import Handshake from '../models/Handshake.js'
 
 export async function initHandshake(req, res) {
@@ -9,9 +9,27 @@ export async function initHandshake(req, res) {
       return res.status(400).json({ error: 'Missing client public key' })
     }
 
+    // Validate client public key size before storing
+    try {
+      const clientPub = b64ToUint8Array(clientPubB64)
+      if (clientPub.length !== 32) {
+        console.error(`Invalid client public key size during init: ${clientPub.length} bytes (expected 32)`)
+        return res.status(400).json({ error: `Invalid client public key size: ${clientPub.length} bytes (expected 32)` })
+      }
+    } catch (keyError) {
+      console.error('Failed to decode client public key:', keyError.message)
+      return res.status(400).json({ error: `Invalid client public key format: ${keyError.message}` })
+    }
+
     // Generate server X25519 key pair
     const serverKeyPair = generateServerX25519KeyPair()
     const serverPublicKeyB64 = uint8ArrayToB64(serverKeyPair.publicKey)
+    
+    // Validate server keys
+    if (serverKeyPair.publicKey.length !== 32 || serverKeyPair.secretKey.length !== 32) {
+      console.error(`Invalid server key pair size: pub=${serverKeyPair.publicKey.length}, sec=${serverKeyPair.secretKey.length}`)
+      return res.status(500).json({ error: 'Server key generation failed' })
+    }
 
     // Create handshake record
     const handshake = await Handshake.create({

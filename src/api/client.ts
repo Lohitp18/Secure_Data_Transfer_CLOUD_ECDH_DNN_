@@ -61,7 +61,7 @@ class ApiClient {
     this.client = axios.create({
       baseURL: API_BASE_URL,
       timeout: 15000,
-      headers: { 'Content-Type': 'application/json' },
+      // Don't set default Content-Type - let axios set it based on data type
     })
 
     this.client.interceptors.request.use((config) => {
@@ -69,6 +69,18 @@ class ApiClient {
       if (token) {
         config.headers = config.headers || {}
         config.headers.Authorization = `Bearer ${token}`
+      }
+      // Set Content-Type for JSON requests, but not for FormData (axios will set it automatically)
+      if (!(config.data instanceof FormData)) {
+        config.headers = config.headers || {}
+        if (!config.headers['Content-Type']) {
+          config.headers['Content-Type'] = 'application/json'
+        }
+      } else {
+        // For FormData, explicitly remove Content-Type to let browser/axios set it with boundary
+        if (config.headers) {
+          delete config.headers['Content-Type']
+        }
       }
       return config
     })
@@ -121,7 +133,8 @@ class ApiClient {
     onProgress?: (progress: number) => void
   ): Promise<FileUploadResult> {
     const { data } = await this.client.post('/files/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      // Don't set Content-Type manually - axios will set it automatically with boundary for FormData
+      // This preserves the Authorization header set by the interceptor
       onUploadProgress: (evt) => {
         if (onProgress && evt.total) {
           const p = Math.round((evt.loaded * 100) / evt.total)
@@ -163,8 +176,9 @@ class ApiClient {
     try {
       const { data } = await this.client.get('/health', { timeout: 5000 })
       return { ok: true, status: data.status || 'healthy' }
-    } catch (error: any) {
-      if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || !error.response) {
+    } catch (error: unknown) {
+      const err = error as { code?: string; response?: unknown }
+      if (err.code === 'ECONNREFUSED' || err.code === 'ERR_NETWORK' || !err.response) {
         return { ok: false, status: 'backend_unavailable' }
       }
       return { ok: false, status: 'unhealthy' }

@@ -7,6 +7,13 @@ export function generateServerX25519KeyPair() {
 }
 
 export function computeSharedSecret(serverSecretKey, clientPublicKey) {
+  // Validate key sizes (X25519 keys must be exactly 32 bytes)
+  if (!serverSecretKey || serverSecretKey.length !== 32) {
+    throw new Error(`Invalid server secret key size: expected 32 bytes, got ${serverSecretKey?.length || 0}`)
+  }
+  if (!clientPublicKey || clientPublicKey.length !== 32) {
+    throw new Error(`Invalid client public key size: expected 32 bytes, got ${clientPublicKey?.length || 0}`)
+  }
   // nacl.box.before uses Curve25519 to compute a shared key
   return nacl.box.before(clientPublicKey, serverSecretKey)
 }
@@ -22,7 +29,17 @@ export function deriveAesKey(sharedSecret) {
 }
 
 export function b64ToUint8Array(b64) {
-  return new Uint8Array(Buffer.from(b64, 'base64'))
+  if (!b64 || typeof b64 !== 'string') {
+    throw new Error('Invalid base64 string provided')
+  }
+  try {
+    // Trim whitespace and handle potential padding issues
+    const cleaned = b64.trim().replace(/\s/g, '')
+    const buffer = Buffer.from(cleaned, 'base64')
+    return new Uint8Array(buffer)
+  } catch (error) {
+    throw new Error(`Failed to decode base64: ${error.message}`)
+  }
 }
 
 export function uint8ArrayToB64(arr) {

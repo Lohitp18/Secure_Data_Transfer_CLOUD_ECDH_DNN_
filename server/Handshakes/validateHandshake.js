@@ -24,6 +24,18 @@ export async function validateHandshake(req, res) {
     // Compute shared secret
     const clientPub = b64ToUint8Array(handshake.clientPublicKeyB64)
     const serverSecret = b64ToUint8Array(handshake.serverSecretKeyB64)
+    
+    // Validate key sizes before computing shared secret
+    if (clientPub.length !== 32) {
+      console.error(`Invalid client public key size: ${clientPub.length} bytes (expected 32)`)
+      console.error(`Client public key B64: ${handshake.clientPublicKeyB64.substring(0, 50)}...`)
+      return res.status(400).json({ error: `Invalid client public key size: ${clientPub.length} bytes (expected 32)` })
+    }
+    if (serverSecret.length !== 32) {
+      console.error(`Invalid server secret key size: ${serverSecret.length} bytes (expected 32)`)
+      return res.status(500).json({ error: `Invalid server secret key size: ${serverSecret.length} bytes (expected 32)` })
+    }
+    
     const sharedSecret = computeSharedSecret(serverSecret, clientPub)
     
     // Derive AES session key
