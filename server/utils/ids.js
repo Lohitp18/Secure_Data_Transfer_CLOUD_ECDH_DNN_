@@ -1,5 +1,9 @@
 import axios from 'axios'
 
+// Simple rate-limit for IDS warnings to avoid log spam during brute force tests
+let lastWarnTs = 0
+const WARN_INTERVAL_MS = 30_000
+
 const IDS_URL = process.env.IDS_URL || 'http://localhost:6000'
 
 export async function callIDS(endpoint, features) {
@@ -13,12 +17,19 @@ export async function callIDS(endpoint, features) {
     
     return response.data
   } catch (error) {
-    console.error('IDS service error:', error.message)
-    // Return safe defaults if IDS is unavailable
+    // Fallback: keep operations running even if IDS is down
+    const reason = error?.message || 'unknown'
+    const detail = error?.response?.data?.error || error?.code
+    const now = Date.now()
+    if (now - lastWarnTs > WARN_INTERVAL_MS) {
+      console.warn(`IDS service unavailable, falling back to normal verdict (${reason}${detail ? `: ${detail}` : ''})`)
+      lastWarnTs = now
+    }
     return {
       anomaly_score: 0.1,
       verdict: 'normal',
-      confidence: 0.9
+      confidence: 0.0,
+      error: reason
     }
   }
 }
