@@ -310,8 +310,6 @@ def bruteforce_handshake(attempts=50):
                 )
                 
                 if response.status_code == 200:
-                    success_count += 1
-                    # Try to validate
                     data = response.json()
                     handshake_id = data.get('handshakeId')
                     
@@ -322,14 +320,19 @@ def bruteforce_handshake(attempts=50):
                             headers={"Authorization": f"Bearer {token}"},
                             timeout=2
                         )
-                        
-                        if validate_response.status_code == 200:
-                            validate_data = validate_response.json() if validate_response.text else {}
-                            ids_result = validate_data.get('idsResult', {})
-                            anomaly_score = ids_result.get('anomaly_score', 0) if isinstance(ids_result, dict) else 0
-                            
-                            if anomaly_score > 0.5:
-                                suspicious_count += 1
+
+                        validate_data = validate_response.json() if validate_response.text else {}
+                        ids_result = validate_data.get('idsResult', {}) if isinstance(validate_data, dict) else {}
+                        anomaly_score = ids_result.get('anomaly_score', 0) if isinstance(ids_result, dict) else 0
+
+                        # Any handshake flagged with high anomaly score counts as suspicious
+                        if anomaly_score > 0.5:
+                            suspicious_count += 1
+                        # Treat only clean 200 responses as "successful"
+                        if validate_response.status_code == 200 and anomaly_score <= 0.5:
+                            success_count += 1
+                        else:
+                            failed_count += 1
                 else:
                     failed_count += 1
                 

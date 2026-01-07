@@ -15,6 +15,10 @@ SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:5000/api")
 TEST_EMAIL = os.environ.get("TEST_EMAIL", "test@example.com")
 TEST_PASSWORD = os.environ.get("TEST_PASSWORD", "Test123!@#")
 TEST_FILES_DIR = Path("test_files")
+SAFE_ACCEPT_FILENAMES = {
+    "company_logo.png",
+    "logoo.webp",
+}
 
 def get_auth_token():
     """Get authentication token for testing"""
@@ -284,6 +288,44 @@ def test_other_corrupted_files(token):
     
     return passed_count == total_count
 
+# ==================== TEST: Run All Files in test_files ====================
+
+def test_all_files(token):
+    """Run upload check on every file in test_files/; safe list is accepted, others expected rejected."""
+    print_test_header("TEST: All Files in test_files/")
+    
+    if not token:
+        print_result("All Files", False, "Cannot authenticate")
+        return False
+    
+    if not TEST_FILES_DIR.exists():
+        print_result("All Files", False, f"{TEST_FILES_DIR} not found")
+        return False
+    
+    entries = sorted([p for p in TEST_FILES_DIR.iterdir() if p.is_file()])
+    if not entries:
+        print_result("All Files", False, "No files found in test_files/")
+        return False
+    
+    results = []
+    for filepath in entries:
+        fname = filepath.name.lower()
+        expected_rejection = fname not in SAFE_ACCEPT_FILENAMES
+        passed, _ = upload_file(str(filepath), token, expected_rejection=expected_rejection)
+        results.append((filepath.name, passed, expected_rejection))
+    
+    passed_count = sum(1 for _, passed, _ in results if passed)
+    total = len(results)
+    print(f"\n📊 Results: {passed_count}/{total} files matched expectation")
+    for name, passed, expected_rejection in results:
+        status = "✅" if passed else "❌"
+        expectation = "rejected" if expected_rejection else "accepted"
+        print(f"   {status} {name} (expected {expectation})")
+    
+    all_passed = passed_count == total
+    print_result("All Files", all_passed, f"{passed_count}/{total} matched expectation")
+    return all_passed
+
 # ==================== Main Execution ====================
 
 if __name__ == "__main__":
@@ -294,6 +336,7 @@ if __name__ == "__main__":
     print("  1. Corrupted PNG files")
     print("  2. Corrupted PDF files")
     print("  3. Other suspicious file patterns")
+    print("  4. Full sweep of all files in test_files/ (safe list allowed)")
     print("\nMake sure your server and IDS service are running!")
     print(f"   Server: {SERVER_URL}")
     print(f"   Test Files Directory: {TEST_FILES_DIR}")
@@ -321,6 +364,9 @@ if __name__ == "__main__":
     
     result_other = test_other_corrupted_files(token)
     results.append(("Other Corrupted Files", result_other))
+    
+    result_all = test_all_files(token)
+    results.append(("All Files", result_all))
     
     # Summary
     print("\n" + "="*70)

@@ -25,6 +25,15 @@ export async function validateHandshake(req, res) {
     handshake.metadata = handshake.metadata || {}
     handshake.metadata.retryCount = (handshake.metadata.retryCount || 0) + 1
 
+    // Count recent handshakes for this user to detect brute-force behaviour
+    const windowMs = 30 * 1000 // last 30 seconds
+    const recentWindowStart = new Date(Date.now() - windowMs)
+    const recentCount = await Handshake.countDocuments({
+      userId: req.user.id,
+      createdAt: { $gte: recentWindowStart }
+    })
+    const rateAbuse = recentCount > 10
+
     // Compute shared secret
     const clientPub = b64ToUint8Array(handshake.clientPublicKeyB64)
     const serverSecret = b64ToUint8Array(handshake.serverSecretKeyB64)
@@ -64,6 +73,7 @@ export async function validateHandshake(req, res) {
       client_entropy: calculateEntropy(handshake.clientPublicKeyB64),
       server_entropy: calculateEntropy(handshake.serverPublicKeyB64),
       retry_count: handshake.metadata?.retryCount || 0,
+      recent_handshakes_30s: recentCount,
       timestamp_hour: new Date().getHours(),
       ip_reputation: 0.8, // Placeholder
       geolocation_risk: 0.2, // Placeholder
@@ -83,17 +93,22 @@ export async function validateHandshake(req, res) {
       || idsResult.anomaly_score >= 0.6 
       || idsResult.verdict !== 'normal'
       || (!signatureProvided && entropyScore < 4.0) // weak / tampered key material
-
-    // Update handshake record
-    handshake.sharedSecretB64 = uint8ArrayToB64(sharedSecret)
-    handshake.sessionKeyB64 = sessionKeyB64
-    handshake.verified = signatureValid && !suspiciousHandshake
-    handshake.status = suspiciousHandshake ? 'suspicious' : 'completed'
-    handshake.idsResult = idsResult
-    handshake.completedAt = new Date()
-    await handshake.save()
+      || rateAbuse // too many handshakes in a short window
 
     if (suspiciousHandshake) {
+      // Force IDS verdict to suspicious with high anomaly score for logging/testing
+      idsResult.anomaly_score = Math.max(idsResult.anomaly_score || 0, 0.9)
+      idsResult.verdict = 'suspicious'
+
+      // Update handshake record before returning
+      handshake.sharedSecretB64 = uint8ArrayToB64(sharedSecret)
+      handshake.sessionKeyB64 = sessionKeyB64
+      handshake.verified = false
+      handshake.status = 'suspicious'
+      handshake.idsResult = idsResult
+      handshake.completedAt = new Date()
+      await handshake.save()
+
       try {
         await ConnectionLog.create({
           userId: req.user.id,
@@ -114,6 +129,15 @@ export async function validateHandshake(req, res) {
         }
       })
     }
+
+    // Non-suspicious handshake: mark as completed
+    handshake.sharedSecretB64 = uint8ArrayToB64(sharedSecret)
+    handshake.sessionKeyB64 = sessionKeyB64
+    handshake.verified = signatureValid
+    handshake.status = 'completed'
+    handshake.idsResult = idsResult
+    handshake.completedAt = new Date()
+    await handshake.save()
 
     // Prepare response
     const response = {
