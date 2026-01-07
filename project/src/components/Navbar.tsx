@@ -20,7 +20,7 @@ export const Navbar: React.FC<NavbarProps> = ({ isAuthenticated, user, onLogout 
   const navItems = [
     { path: '/', label: 'Home', icon: Shield },
     ...(isAuthenticated ? [
-      { path: '/upload', label: 'Secure Upload', icon: Upload },
+      // Secure Upload page removed from frontend navigation
       { path: '/logs', label: 'Transfer Logs', icon: FileText },
     ] : []),
   ];

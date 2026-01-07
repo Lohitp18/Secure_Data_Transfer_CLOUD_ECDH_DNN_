@@ -4,13 +4,12 @@ import { Sidebar } from './components/layout/Sidebar'
 import { AuthForm } from './components/auth/AuthForm'
 import { Dashboard } from './components/dashboard/Dashboard'
 import { HandshakePanel } from './components/handshake/HandshakePanel'
-import { FileTransferPanel } from './components/transfer/FileTransferPanel'
 import { IntrusionAlertsPanel } from './components/alerts/IntrusionAlertsPanel'
 import { ActivityLogsPanel } from './components/activity/ActivityLogsPanel'
 import { api, AuthUser } from './lib/api'
 import { toast } from 'react-hot-toast'
 
-type TabType = 'dashboard' | 'handshake' | 'transfer' | 'intrusion' | 'activity' | 'settings'
+type TabType = 'dashboard' | 'handshake' | 'intrusion' | 'activity' | 'settings'
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -73,8 +72,6 @@ function App() {
         return <Dashboard />
       case 'handshake':
         return <HandshakePanel />
-      case 'transfer':
-        return <FileTransferPanel />
       case 'intrusion':
         return <IntrusionAlertsPanel />
       case 'activity':

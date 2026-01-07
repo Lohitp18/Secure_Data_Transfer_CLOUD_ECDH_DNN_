@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Navbar } from './components/Navbar';
 import { Home } from './pages/Home';
 import { Login } from './pages/Login';
-import { SecureUpload } from './pages/SecureUpload';
 import { TransferStatus } from './pages/TransferStatus';
 import { Logs } from './pages/Logs';
 
@@ -77,14 +76,7 @@ function App() {
             } 
           />
           
-          <Route 
-            path="/upload" 
-            element={
-              isAuthenticated ? 
-                <SecureUpload /> : 
-                <Navigate to="/login" replace />
-            } 
-          />
+          {/* Secure upload UI removed in this build; uploads are driven by backend/Python client */}
           
           <Route 
             path="/status" 

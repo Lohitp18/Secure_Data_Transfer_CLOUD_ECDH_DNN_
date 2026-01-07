@@ -117,11 +117,6 @@ const uploadHandler = async (req, res) => {
          req.file.mimetype)
       : req.file.mimetype
     
-    // Check if this is a PNG image - PNG images must be accepted at any cost
-    const isPNG = originalFilename.toLowerCase().endsWith('.png') || 
-                  originalMimeType === 'image/png' ||
-                  req.file.mimetype === 'image/png'
-    
     // Comprehensive file validation (corruption detection, file type, etc.)
     // For encrypted files, use original filename for validation context
     // Note: Encrypted data won't match magic bytes, so file type detection will be limited
@@ -131,20 +126,9 @@ const uploadHandler = async (req, res) => {
       originalMimeType
     )
     
-    // For PNG images: Always accept, bypass all validation issues
-    if (isPNG) {
-      console.log(`[PNG ACCEPTANCE] Accepting PNG file: ${originalFilename} (bypassing validation)`)
-      // Clear all validation issues for PNG files
-      fileValidation.issues = []
-      fileValidation.isCorrupted = false
-      fileValidation.isSuspicious = false
-      fileValidation.riskScore = 0
-      fileValidation.criticalityLevel = 0
-      fileValidation.isValid = true
-    }
     // For encrypted files, don't fail validation based on file type mismatch
     // (encrypted data won't match PNG/JPEG magic bytes, which is expected)
-    else if (isEncrypted) {
+    if (isEncrypted) {
       // Remove file type mismatch issues since encrypted data is expected to not match
       const fileTypeIssues = fileValidation.issues.filter(issue => 
         issue.includes('does not match detected type') || 
@@ -169,14 +153,26 @@ const uploadHandler = async (req, res) => {
            fileTypeIssues.length > 0)) {
         fileValidation.isCorrupted = false
       }
+
+      // Reject encrypted payloads that do not specify the original filename (tampering risk)
+      if (!req.body.original_name) {
+        fileValidation.isSuspicious = true
+        fileValidation.riskScore = Math.max(fileValidation.riskScore, 0.9)
+        fileValidation.issues.push('Encrypted payload missing original filename metadata')
+      }
     }
     
-    // Decide based on entropy-based criticality level:
-    // level 0 = SAFE, 1 = WARNING, 2 = SUSPICIOUS, 3 = CRITICAL, 4 = BLOCK IMMEDIATELY
-    // Block only when level >= 2 (suspicious or worse).
-    // PNG files are always accepted (shouldReject will be false for PNG)
     const criticalityLevel = fileValidation.criticalityLevel ?? 0
-    const shouldReject = isPNG ? false : (criticalityLevel >= 2)
+    const corruptionSignals = fileValidation.isCorrupted || fileValidation.issues.some(issue => {
+      const lower = issue.toLowerCase()
+      if (lower.includes('no corruption indicators detected')) return false
+      return lower.includes('corrupt')
+    })
+    // Reject if corrupted, marked suspicious, or high risk score/criticality
+    const shouldReject = corruptionSignals 
+      || fileValidation.isSuspicious 
+      || fileValidation.riskScore > 0.6 
+      || criticalityLevel >= 3
     
     // Debug logging
     if (shouldReject) {
@@ -301,31 +297,22 @@ const uploadHandler = async (req, res) => {
       }
     } catch (idsError) {
       console.warn('IDS file analysis failed:', idsError.message)
-      // If IDS is unavailable but file has issues, mark as suspicious
-      if (fileValidation.riskScore > 0.3) {
+      // If IDS is unavailable:
+      // - For low-risk files, stay permissive (treat as normal)
+      // - For risky files, mirror the validation risk
+      if (fileValidation.riskScore > 0.3 || fileValidation.isSuspicious || fileValidation.isCorrupted) {
         idsResult = { 
-          anomaly_score: fileValidation.riskScore, 
+          anomaly_score: Math.max(fileValidation.riskScore, 0.6), 
           verdict: 'suspicious', 
-          error: 'IDS service unavailable but file validation detected issues' 
+          error: 'IDS service unavailable but validation detected risk' 
         }
       } else {
-        idsResult = { anomaly_score: 0.8, verdict: 'suspicious', error: 'IDS service unavailable' }
+        idsResult = { anomaly_score: 0.1, verdict: 'normal', error: 'IDS service unavailable; allowing low-risk file' }
       }
     }
 
-    // PNG files are always accepted - bypass IDS and validation checks
-    if (isPNG) {
-      console.log(`[PNG ACCEPTANCE] Bypassing IDS check for PNG: ${originalFilename}`)
-      // Force IDS result to normal for PNG files
-      idsResult = { anomaly_score: 0.0, verdict: 'normal' }
-      fileValidation.isCorrupted = false
-      fileValidation.isSuspicious = false
-      fileValidation.riskScore = 0
-    }
-    
     // Only store in database if file is NOT suspicious or corrupted
-    // PNG files are exempt from this check
-    if (!isPNG && (idsResult.verdict === 'suspicious' || fileValidation.isCorrupted || fileValidation.riskScore > 0.5)) {
+    if (idsResult.verdict === 'suspicious' || fileValidation.isCorrupted || fileValidation.riskScore > 0.5) {
       // Create alert but DO NOT store the file
       await Alert.create({
         userId: req.user.id,

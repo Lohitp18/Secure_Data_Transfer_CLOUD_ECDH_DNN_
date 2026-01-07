@@ -10,7 +10,7 @@ interface SidebarProps {
 const navigation = [
   { id: 'dashboard', name: 'Dashboard', icon: Shield },
   { id: 'handshake', name: 'Connection', icon: Lock },
-  { id: 'transfer', name: 'File Transfer', icon: FileTransfer },
+  // File transfer UI removed from frontend
   { id: 'intrusion', name: 'IDS Alerts', icon: AlertTriangle },
   { id: 'activity', name: 'Activity Logs', icon: Activity },
   { id: 'settings', name: 'Settings', icon: Settings },

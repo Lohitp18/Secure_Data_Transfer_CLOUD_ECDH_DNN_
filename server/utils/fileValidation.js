@@ -177,20 +177,49 @@ export function classifyFileCriticality(buffer, filename = '', originalMimeType 
   const reasons = []
 
   const normalizedName = (filename || '').toLowerCase()
-
-  // New requirement: ONLY these specific filenames should be treated as corrupted.
-  // Any other filename should be considered safe (level 0), regardless of entropy.
   let level = 0
+  let riskScore = 0
 
+  // Boost risk if filename is known bad, but do NOT rely solely on filename
   if (normalizedName && KNOWN_CORRUPTED_FILENAMES.includes(normalizedName)) {
-    level = 4
-    reasons.push('Filename is in configured corrupted_file_names list')
-  } else {
-    level = 0
-    reasons.push('Filename not in corrupted list — treat as safe')
+    level = 3
+    riskScore = 0.9
+    reasons.push('Filename appears in known corrupted list')
   }
 
-  const riskScore = level
+  // Header and structure sanity checks
+  if (hasMalformedHeader(buffer, filename)) {
+    level = 4
+    riskScore = Math.max(riskScore, 0.95)
+    reasons.push('Malformed or truncated header detected')
+  }
+
+  // Entropy based signals
+  if (entropy > 7.8 && buffer.length > 512) {
+    level = Math.max(level, 3)
+    riskScore = Math.max(riskScore, 0.75)
+    reasons.push(`Extremely high entropy (${entropy.toFixed(2)})`)
+  }
+  if (entropy < 2.5 && buffer.length > 500 && detectedType && !detectedType.startsWith('text/')) {
+    level = Math.max(level, 3)
+    riskScore = Math.max(riskScore, 0.7)
+    reasons.push(`Unusually low entropy (${entropy.toFixed(2)}) for ${detectedType}`)
+  }
+
+  // Extension-driven baseline risk
+  const extRisk = extensionRisk(filename)
+  if (extRisk >= 2) {
+    riskScore = Math.max(riskScore, 0.45 + (0.1 * (extRisk - 1)))
+    reasons.push('High-risk file extension')
+  }
+
+  // If no strong signals, keep level low
+  if (level === 0 && riskScore < 0.4) {
+    reasons.push('No corruption indicators detected')
+  }
+
+  // Normalize riskScore to 0–1 and couple to level
+  riskScore = Math.min(1, Math.max(riskScore, level / 4))
 
   return { level, riskScore, reasons, entropy, detectedType }
 }
@@ -524,6 +553,14 @@ export async function validateFile(buffer, filename, originalMimeType) {
     validation.isSuspicious = true
     validation.isValid = false
     validation.recommendations.push('File should be rejected due to extremely high entropy or being empty')
+  }
+
+  // If any corruption flags were raised, mark file as invalid and raise risk
+  if (validation.isCorrupted) {
+    validation.isValid = false
+    validation.isSuspicious = true
+    validation.criticalityLevel = Math.max(validation.criticalityLevel || 0, 3)
+    validation.riskScore = Math.max(validation.riskScore || 0, 0.8)
   }
   
   return validation

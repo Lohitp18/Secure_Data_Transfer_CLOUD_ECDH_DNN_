@@ -21,6 +21,10 @@ export async function validateHandshake(req, res) {
       return res.status(403).json({ error: 'Unauthorized' })
     }
 
+    // Track retry attempts for IDS features
+    handshake.metadata = handshake.metadata || {}
+    handshake.metadata.retryCount = (handshake.metadata.retryCount || 0) + 1
+
     // Compute shared secret
     const clientPub = b64ToUint8Array(handshake.clientPublicKeyB64)
     const serverSecret = b64ToUint8Array(handshake.serverSecretKeyB64)
@@ -44,7 +48,8 @@ export async function validateHandshake(req, res) {
 
     // Verify Ed25519 signature if provided
     let signatureValid = true
-    if (signature && signingPubKey) {
+    const signatureProvided = Boolean(signature && signingPubKey)
+    if (signatureProvided) {
       const message = Buffer.from(handshake.serverPublicKeyB64, 'utf8')
       const sig = b64ToUint8Array(signature)
       const signPub = b64ToUint8Array(signingPubKey)
@@ -73,14 +78,42 @@ export async function validateHandshake(req, res) {
       console.warn('IDS call failed:', idsError.message)
     }
 
+    const entropyScore = handshakeFeatures.client_entropy
+    const suspiciousHandshake = (!signatureValid && signatureProvided) 
+      || idsResult.anomaly_score >= 0.6 
+      || idsResult.verdict !== 'normal'
+      || (!signatureProvided && entropyScore < 4.0) // weak / tampered key material
+
     // Update handshake record
     handshake.sharedSecretB64 = uint8ArrayToB64(sharedSecret)
     handshake.sessionKeyB64 = sessionKeyB64
-    handshake.verified = signatureValid
-    handshake.status = idsResult.verdict === 'suspicious' ? 'suspicious' : 'completed'
+    handshake.verified = signatureValid && !suspiciousHandshake
+    handshake.status = suspiciousHandshake ? 'suspicious' : 'completed'
     handshake.idsResult = idsResult
     handshake.completedAt = new Date()
     await handshake.save()
+
+    if (suspiciousHandshake) {
+      try {
+        await ConnectionLog.create({
+          userId: req.user.id,
+          status: 'failed',
+          handshake_type: 'X25519',
+          details: `Handshake rejected - IDS verdict: ${idsResult.verdict}, signatureValid=${signatureValid}`
+        })
+      } catch (logErr) {
+        console.error('Failed to create connection log:', logErr)
+      }
+
+      return res.status(403).json({
+        verified: false,
+        reason: 'Handshake flagged by intrusion detection',
+        idsResult: {
+          anomaly_score: idsResult.anomaly_score,
+          verdict: idsResult.verdict
+        }
+      })
+    }
 
     // Prepare response
     const response = {

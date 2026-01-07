@@ -9,6 +9,16 @@ export async function initHandshake(req, res) {
       return res.status(400).json({ error: 'Missing client public key' })
     }
 
+    // Simple per-user rate limiting to mitigate brute-force handshake floods
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000)
+    const recentCount = await Handshake.countDocuments({
+      userId: req.user.id,
+      createdAt: { $gte: oneMinuteAgo }
+    })
+    if (recentCount >= 20) {
+      return res.status(429).json({ error: 'Too many handshake attempts detected. Please wait and try again.' })
+    }
+
     // Validate client public key size before storing
     try {
       const clientPub = b64ToUint8Array(clientPubB64)
